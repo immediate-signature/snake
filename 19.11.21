@@ -1,0 +1,212 @@
+ideal
+model small
+stack 100h
+dataseg
+message db 'game over, to play again press y$'
+object_location dw 2
+clock equ es:6ch
+longer db 0
+snake dw 2000 dup (0)
+codeseg
+proc cleanscreen ; cleans the screen
+	push cx
+	push bx
+	mov cx,4000d
+	mov bx,0
+	clean:	mov [byte  ptr es:bx],0
+	inc bx
+	loop clean
+	pop bx
+	pop cx
+	ret
+endp cleanscreen
+
+proc startgame
+mov ax, 0b800h
+mov es, ax 
+call cleanscreen
+mov dl, '*'
+mov dh,200
+mov di,2000d;snake head first position
+mov [es:di], dx
+mov [es:di-2], dx
+mov [es:di-4], dx
+mov	[word ptr snake],1996d
+mov [word ptr snake+2], 1998d
+mov [word ptr snake+4], 2000d
+mov cx, 3
+call random
+mov ah,0
+int 16h
+call detect_direction
+ret
+endp startgame
+
+proc delay
+push cx
+push bx
+	mov cx, 0ffffh ;delay loop
+	lopa:
+		mov bx, 20d
+		lopb:
+			dec bx
+			cmp bx, 0
+			jnz lopb
+	loop lopa
+	pop bx
+	pop cx
+	ret
+endp delay
+
+proc buffer
+mov ah,1
+int 16h
+jz nothingchanged
+mov ah,0
+int 16h
+nothingchanged:
+ret
+endp buffer
+
+proc detect_direction
+	cmp al, 'w'
+	je up
+	cmp al, 'a'
+	je left
+	cmp al, 'd'
+	je right
+	cmp al, 's'
+	je  down
+	cmp al, 'q'
+	je gameover
+up: sub di,160
+jmp move_on
+down: add di,160d
+jmp move_on
+right: add di,2
+jmp move_on
+left: sub di,2
+jmp move_on
+gameover:call endgame
+move_on:
+call move_func
+ret
+endp detect_direction
+
+proc updatesnake
+	push bx
+	push si
+	mov bx, offset snake 
+	cmp [longer],1 ;if longer is one , increase snake length
+	je increa
+	mov si, [bx]
+	mov [word ptr es:si], 0 ; delete tail
+	sub bx,2
+	increa:
+		mov [es:di], dx
+		add bx,2 ; prevent tail value from being deleted when being increased
+	updateloop:
+		mov si, [bx+2]
+		mov [bx], si
+		inc bx 
+	loop updateloop
+	mov [bx], di
+	cmp [longer],1
+	jne reg
+	inc cx ; this prevent inseting a junk value when increasing snake's length
+	reg:
+	pop si
+	pop bx
+ret 
+endp updatesnake
+
+proc move_func
+call updatesnake
+call delay
+call boundries
+call check_if_eaten
+call buffer
+call detect_direction
+ret
+endp move_func
+
+proc boundries
+push ax
+push dx
+cmp di,160d
+ja keep_playing
+cmp di,3840d
+jb keep_playing
+mov ax,di
+mov dl,160d
+div dl
+cmp ah,0
+jne keep_playing
+mov ax,di
+inc ax
+div dl
+cmp ah,0
+jne keep_playing
+call endgame
+keep_playing:
+pop dx
+pop ax
+ret
+endp boundries
+
+proc random
+push ax
+push bx
+push cx
+push si
+push dx
+mov ax, [clock] ; read timer counter
+mov cx, [word cs:bx] ; read one byte from memory
+xor si, cx ; xor memory and counter
+and si, 2000d ; leaves value between 0-2000
+sal si,1 ; mult value
+mov [object_location], si ; save in memory for future checking
+mov dl,'@'
+mov dh, 150
+mov [es:si],dx
+pop dx
+pop si
+pop cx
+pop bx
+pop ax
+ret
+endp random
+
+proc check_if_eaten
+mov [longer],0
+cmp di, [object_location]
+jne skip_increase
+call random
+mov [longer], 1
+skip_increase:
+ret
+endp check_if_eaten
+
+proc endgame
+push dx
+call cleanscreen
+mov dx, offset message
+mov ah,9h
+int 21h
+mov ah,0
+int 16
+cmp al, 'y'
+jne line
+call startgame
+line:
+pop dx
+ret
+endp endgame
+start:
+	mov ax, @data
+	mov ds, ax
+	call startgame
+exit:
+	mov ax, 4c00h
+	int 21h
+end start
